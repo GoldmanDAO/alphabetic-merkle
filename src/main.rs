@@ -1,6 +1,6 @@
 use ethers::{
     abi::{encode_packed, Token},
-    types::{Address, U256},
+    types::{Address, Bytes, U256},
     utils::keccak256,
 };
 use rand::Rng;
@@ -35,7 +35,7 @@ fn main() {
     let root = generate_merkle_proof(hashes.clone());
     let elapsed = now.elapsed();
     println!("Elapsed: {:.2?}", elapsed);
-    println!("{:?}", root);
+    println!("{}", Bytes::from_iter(root.into_iter()));
 
     let proofs = generate_proof_of_inclusion(hashes, addresses[3]);
     println!("Proofs: {:?}", proofs.len());
