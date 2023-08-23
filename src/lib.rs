@@ -1,5 +1,6 @@
 use rs_merkle::{Hasher, MerkleTree};
 use ethers::utils::keccak256;
+use thiserror::Error;
 
 pub mod account_with_balance;
 use account_with_balance::AccountWithBalance;
@@ -13,6 +14,20 @@ impl Hasher for Keccak256Algorithm {
     fn hash(data: &[u8]) -> [u8; 32] {
         keccak256(data)
     }
+}
+
+#[derive(Error, Debug)]
+pub enum Error {
+  #[error("Account not found")]
+  AccountNotFoundError,
+  #[error("Account already exists")]
+  AccountAlreadyExistsError,
+  #[error("Empty accounts list")]
+  EmptyAccountsListError,
+  #[error("Error getting merkle tree root")]
+  MerkleTreeRootError,
+  #[error("Error parsing proof")]
+  MerkleProofParsingError,
 }
 
 fn order_accounts(accounts: &Vec<AccountWithBalance>) -> Vec<AccountWithBalance> {
@@ -30,22 +45,32 @@ fn create_merkle_tree(accounts: Vec<AccountWithBalance>) -> MerkleTree<Keccak256
   MerkleTree::<Keccak256Algorithm>::from_leaves(&leaves)
 }
 
-pub fn get_merkle_root(accounts: Vec<AccountWithBalance>) -> [u8; 32] {
+pub fn get_merkle_root(accounts: Vec<AccountWithBalance>) -> Result<[u8; 32], Error> {
+  if accounts.len() == 0 {
+    return Err(Error::EmptyAccountsListError);
+  }
   let ordered_accounts = order_accounts(&accounts);
   let merkle_tree = create_merkle_tree(ordered_accounts);
-  merkle_tree.root().expect("Couldn't get the merkle root")
+  merkle_tree.root().ok_or(Error::MerkleTreeRootError)
 }
 
-pub fn generate_proof_of_inclusion(accounts: Vec<AccountWithBalance>, account: AccountWithBalance) -> Vec<u8> {
+pub fn generate_proof_of_inclusion(accounts: Vec<AccountWithBalance>, account: AccountWithBalance) -> Result<Vec<u8>, Error> {
+  if accounts.len() == 0 {
+    return Err(Error::EmptyAccountsListError);
+  }
   let ordered_accounts = order_accounts(&accounts);
   let merkle_tree = create_merkle_tree(ordered_accounts);
+
   let index = accounts
       .iter()
-      .position(|x| x.packed() == account.packed())
-      .expect("Couldn't find the index of the account");
-  merkle_tree
-  .proof(&[index])
-  .to_bytes()
+      .position(|x| x.packed() == account.packed());
+
+  match index {
+    None => return Err(Error::AccountNotFoundError),
+    Some(index) => Ok(merkle_tree
+      .proof(&[index])
+      .to_bytes())
+  }
 }
 
 fn find_adjacents(accounts: &Vec<AccountWithBalance>, account: &AccountWithBalance) -> (Option<usize>, Option<usize>) {
@@ -63,14 +88,17 @@ fn find_adjacents(accounts: &Vec<AccountWithBalance>, account: &AccountWithBalan
   }
 }
 
-pub fn generate_proof_of_absense(accounts: Vec<AccountWithBalance>, account: AccountWithBalance) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
+pub fn generate_proof_of_absense(accounts: Vec<AccountWithBalance>, account: AccountWithBalance) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), Error> {
+  if accounts.len() == 0 {
+    return Err(Error::EmptyAccountsListError);
+  }
   let ordered_accounts = order_accounts(&accounts);
   let merkle_tree = create_merkle_tree(ordered_accounts);
   let exist = accounts
       .iter()
       .position(|x| x.eq(&account));
   if exist.is_some() {
-    panic!("Account is included in the list");
+    return Err(Error::AccountAlreadyExistsError);
   };
 
   let (previous_index, next_index) = find_adjacents(&accounts, &account);
@@ -91,7 +119,7 @@ pub fn generate_proof_of_absense(accounts: Vec<AccountWithBalance>, account: Acc
     None
   };
 
-  (left_proof, right_proof)
+  Ok((left_proof, right_proof))
 }
 
 #[cfg(test)]
@@ -127,7 +155,7 @@ mod tests {
       let accounts = fixed_accounts();
 
       let merkle_tree = create_merkle_tree(accounts.clone());
-      let root = merkle_tree.root().expect("Couldn't get the merkle root");
+      let root = merkle_tree.root().expect(Error::MerkleTreeRootError.to_string().as_str());
 
       assert_eq!(merkle_tree.depth(), 3);
       assert_eq!(merkle_tree.leaves_len(), 5);
@@ -146,13 +174,13 @@ mod tests {
       let account = accounts[1].clone();
       let indices_to_prove = vec![1];
 
-      let proof_bytes = generate_proof_of_inclusion(accounts.clone(), account.clone());
+      let proof_bytes = generate_proof_of_inclusion(accounts.clone(), account.clone()).unwrap();
 
       let merkle_tree = create_merkle_tree(accounts.clone());
-      let merkle_root = merkle_tree.root().expect("Couldn't get the merkle root");
+      let merkle_root = merkle_tree.root().expect(Error::MerkleTreeRootError.to_string().as_str());
       let leave_to_prove = account.generate_hash();
 
-      let proof = MerkleProof::<Keccak256Algorithm>::try_from(proof_bytes).expect("couldn't parse proof");
+      let proof = MerkleProof::<Keccak256Algorithm>::try_from(proof_bytes).expect(Error::MerkleProofParsingError.to_string().as_str());
 
       assert!(proof.verify(merkle_root, &indices_to_prove, &[leave_to_prove], accounts.len()));
   }
@@ -161,15 +189,15 @@ mod tests {
   fn test_generate_proof_of_inclusion_from_missing_account() {
     let accounts = fixed_accounts();
     let account = AccountWithBalance::new("0000000000000000000000000000000000000001", "1");
-    let result = std::panic::catch_unwind(|| generate_proof_of_inclusion(accounts.clone(), account.clone()));
-    assert!(result.is_err());
+    let result = generate_proof_of_inclusion(accounts.clone(), account.clone());
+    assert!(matches!(result, Err(Error::AccountNotFoundError)));
   }
 
   #[test]
   fn test_generate_proof_of_absense() {
     let accounts = fixed_accounts();
     let account = AccountWithBalance::new("FF54284f345afc66a98fbB0a0Afe71e0F007B948", "1");
-    let proofs = generate_proof_of_absense(accounts.clone(), account.clone());
+    let proofs = generate_proof_of_absense(accounts.clone(), account.clone()).unwrap();
 
     let merkle_tree = create_merkle_tree(accounts.clone());
     let merkle_root = merkle_tree.root().expect("Couldn't get the merkle root");
@@ -179,14 +207,14 @@ mod tests {
     if proofs.0.is_some() {
       let leave_index = adjacents_indexes.0.unwrap();
       let leave_to_prove = accounts[leave_index].generate_hash();
-      let proof_l = MerkleProof::<Keccak256Algorithm>::try_from(proofs.0.unwrap()).expect("couldn't parse proof");
+      let proof_l = MerkleProof::<Keccak256Algorithm>::try_from(proofs.0.unwrap()).expect(Error::MerkleProofParsingError.to_string().as_str());
       assert!(proof_l.verify(merkle_root, &[leave_index], &[leave_to_prove], accounts.len()));
     }
 
     if proofs.1.is_some() {
       let leave_index = adjacents_indexes.1.unwrap();
       let leave_to_prove = accounts[leave_index].generate_hash();
-      let proof_r = MerkleProof::<Keccak256Algorithm>::try_from(proofs.1.unwrap()).expect("couldn't parse proof");
+      let proof_r = MerkleProof::<Keccak256Algorithm>::try_from(proofs.1.unwrap()).expect(Error::MerkleProofParsingError.to_string().as_str());
       assert!(proof_r.verify(merkle_root, &[leave_index], &[leave_to_prove], accounts.len()));
     }
   }

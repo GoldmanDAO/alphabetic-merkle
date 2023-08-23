@@ -55,6 +55,7 @@ dependencies = [
  "ethers",
  "rand",
  "rs_merkle",
+ "thiserror",
 ]
 
 [[package]]
