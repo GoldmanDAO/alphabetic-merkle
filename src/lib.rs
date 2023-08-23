@@ -36,8 +36,8 @@ fn order_accounts(accounts: &Vec<AccountWithBalance>) -> Vec<AccountWithBalance>
   accounts
 }
 
-fn create_merkle_tree(accounts: Vec<AccountWithBalance>) -> MerkleTree<Keccak256Algorithm> {
-  let ordered_accounts = order_accounts(&accounts);
+fn create_merkle_tree(accounts: &Vec<AccountWithBalance>) -> MerkleTree<Keccak256Algorithm> {
+  let ordered_accounts = order_accounts(accounts);
   let leaves: Vec<[u8; 32]> = ordered_accounts
       .iter()
       .map(|x| x.generate_hash())
@@ -45,21 +45,21 @@ fn create_merkle_tree(accounts: Vec<AccountWithBalance>) -> MerkleTree<Keccak256
   MerkleTree::<Keccak256Algorithm>::from_leaves(&leaves)
 }
 
-pub fn get_merkle_root(accounts: Vec<AccountWithBalance>) -> Result<[u8; 32], Error> {
+pub fn get_merkle_root(accounts: &Vec<AccountWithBalance>) -> Result<[u8; 32], Error> {
   if accounts.len() == 0 {
     return Err(Error::EmptyAccountsListError);
   }
   let ordered_accounts = order_accounts(&accounts);
-  let merkle_tree = create_merkle_tree(ordered_accounts);
+  let merkle_tree = create_merkle_tree(&ordered_accounts);
   merkle_tree.root().ok_or(Error::MerkleTreeRootError)
 }
 
-pub fn generate_proof_of_inclusion(accounts: Vec<AccountWithBalance>, account: AccountWithBalance) -> Result<Vec<u8>, Error> {
+pub fn generate_proof_of_inclusion(accounts: &Vec<AccountWithBalance>, account: AccountWithBalance) -> Result<Vec<u8>, Error> {
   if accounts.len() == 0 {
     return Err(Error::EmptyAccountsListError);
   }
   let ordered_accounts = order_accounts(&accounts);
-  let merkle_tree = create_merkle_tree(ordered_accounts);
+  let merkle_tree = create_merkle_tree(&ordered_accounts);
 
   let index = accounts
       .iter()
@@ -88,12 +88,12 @@ fn find_adjacents(accounts: &Vec<AccountWithBalance>, account: &AccountWithBalan
   }
 }
 
-pub fn generate_proof_of_absense(accounts: Vec<AccountWithBalance>, account: AccountWithBalance) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), Error> {
+pub fn generate_proof_of_absense(accounts: &Vec<AccountWithBalance>, account: AccountWithBalance) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), Error> {
   if accounts.len() == 0 {
     return Err(Error::EmptyAccountsListError);
   }
   let ordered_accounts = order_accounts(&accounts);
-  let merkle_tree = create_merkle_tree(ordered_accounts);
+  let merkle_tree = create_merkle_tree(&ordered_accounts);
   let exist = accounts
       .iter()
       .position(|x| x.eq(&account));
@@ -154,7 +154,7 @@ mod tests {
   fn test_create_merkle_tree() {
       let accounts = fixed_accounts();
 
-      let merkle_tree = create_merkle_tree(accounts.clone());
+      let merkle_tree = create_merkle_tree(&accounts);
       let root = merkle_tree.root().expect(Error::MerkleTreeRootError.to_string().as_str());
 
       assert_eq!(merkle_tree.depth(), 3);
@@ -171,12 +171,12 @@ mod tests {
   #[test]
   fn test_generate_proof_of_inclusion() {
       let accounts = fixed_accounts();
-      let account = accounts[1].clone();
+      let account = accounts[1];
       let indices_to_prove = vec![1];
 
-      let proof_bytes = generate_proof_of_inclusion(accounts.clone(), account.clone()).unwrap();
+      let proof_bytes = generate_proof_of_inclusion(&accounts, account).unwrap();
 
-      let merkle_tree = create_merkle_tree(accounts.clone());
+      let merkle_tree = create_merkle_tree(&accounts);
       let merkle_root = merkle_tree.root().expect(Error::MerkleTreeRootError.to_string().as_str());
       let leave_to_prove = account.generate_hash();
 
@@ -189,7 +189,7 @@ mod tests {
   fn test_generate_proof_of_inclusion_from_missing_account() {
     let accounts = fixed_accounts();
     let account = AccountWithBalance::new("0000000000000000000000000000000000000001", "1");
-    let result = generate_proof_of_inclusion(accounts.clone(), account.clone());
+    let result = generate_proof_of_inclusion(&accounts, account);
     assert!(matches!(result, Err(Error::AccountNotFoundError)));
   }
 
@@ -197,9 +197,9 @@ mod tests {
   fn test_generate_proof_of_absense() {
     let accounts = fixed_accounts();
     let account = AccountWithBalance::new("FF54284f345afc66a98fbB0a0Afe71e0F007B948", "1");
-    let proofs = generate_proof_of_absense(accounts.clone(), account.clone()).unwrap();
+    let proofs = generate_proof_of_absense(&accounts, account).unwrap();
 
-    let merkle_tree = create_merkle_tree(accounts.clone());
+    let merkle_tree = create_merkle_tree(&accounts);
     let merkle_root = merkle_tree.root().expect("Couldn't get the merkle root");
 
     let adjacents_indexes = find_adjacents(&accounts, &account);
