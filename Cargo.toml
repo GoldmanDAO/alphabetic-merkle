@@ -8,3 +8,12 @@ edition = "2021"
 [dependencies]
 ethers = "2.0.8"
 rand = "0.8.5"
+rs_merkle = "1.4.1"
+thiserror = "1.0.47"
+
+[dev-dependencies]
+criterion = "0.5.1"
+
+[[bench]]
+name = "large_merkle_bench"
+harness = false
