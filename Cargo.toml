@@ -1,23 +1,9 @@
-[package]
-name = "alpha_merkle"
-version = "0.1.0"
-edition = "2021"
+[workspace]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-ethers = "2.0.8"
-rand = "0.8.5"
-rs_merkle = "1.4.1"
-sea-orm = { version = "0.12.2", features = ["sqlx-postgres", "runtime-tokio-native-tls", "with-uuid"] }
-thiserror = "1.0.47"
-tokio = { version = "1.32.0", features = ["full"] }
-tracing = "0.1.37"
-tracing-subscriber = "0.3.17"
-
-[dev-dependencies]
-criterion = "0.5.1"
-
-[[bench]]
-name = "large_merkle_bench"
-harness = false
+members = [
+  "api", 
+  "entity", 
+  "merkletree", 
+  "migration", 
+  "services"
+]
