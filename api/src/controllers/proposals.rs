@@ -11,7 +11,14 @@ use services::proposals::queries:: {
 };
 use services::accounts::queries::get_accounts_by_proposal_id;
 use services::utils::pagination::Pagination;
-use merkletree::{merkle_tree::get_merkle_root, account_with_balance::AccountWithBalance};
+use merkletree::{
+  merkle_tree::{
+    get_merkle_root,
+    generate_proof_of_inclusion,
+    generate_proof_of_absense
+  }, 
+  account_with_balance::AccountWithBalance
+};
 
 use crate::AppState;
 
@@ -115,5 +122,49 @@ pub async fn create_proposal(
   }
 }
 
-//async fn get_proof_of_inclusion()
+pub async fn get_proof_of_inclusion(
+  state: State<AppState>,
+  Path(proposal_id): Path<i32>,
+  Json(account): Json<AccountWithBalance>,
+) -> (StatusCode, Json<Value>) {
+  let accounts = get_accounts_by_proposal_id(&state.conn, proposal_id).await.unwrap();
+  let accounts_with_balance: Vec<AccountWithBalance> = accounts.iter().map(|account| {
+    AccountWithBalance::new(account.address.clone().as_str(), account.balance.clone().as_str())
+  }).collect();
+
+  let res = generate_proof_of_inclusion(&accounts_with_balance, account);
+
+  match res {
+      Ok(proof) => (StatusCode::OK, Json(json!({"proof": hex::encode(proof)}))),
+      Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"error": format!("{}", e)})))
+  }
+}
+
+pub async fn get_proof_of_absense(
+  state: State<AppState>,
+  Path(proposal_id): Path<i32>,
+  Json(account): Json<AccountWithBalance>,
+) -> (StatusCode, Json<Value>) {
+  let accounts = get_accounts_by_proposal_id(&state.conn, proposal_id).await.unwrap();
+  let accounts_with_balance: Vec<AccountWithBalance> = accounts.iter().map(|account| {
+    AccountWithBalance::new(account.address.clone().as_str(), account.balance.clone().as_str())
+  }).collect();
+
+  let res = generate_proof_of_absense(&accounts_with_balance, account);
+
+  match res {
+    Ok(proof) => {
+      let hex_proof = match proof {
+        (Some(left), Some(right)) => (hex::encode(left), hex::encode(right)),
+        (Some(left), None) => (hex::encode(left), "".to_string()),
+        (None, Some(right)) => ("".to_string(), hex::encode(right)),
+        (None, None) => ("".to_string(), "".to_string())
+      };
+      (StatusCode::OK, Json(json!({"proof": hex_proof })))
+    },
+    Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"error": format!("{}", e)})))
+  }
+}
+
+
 //async fn get_proof_of_absense()

@@ -1,6 +1,6 @@
 use anyhow::Ok;
 use axum::{
-  routing::get,
+  routing::{get, post},
   Router, Server,
 };
 use sea_orm:: {
@@ -22,7 +22,12 @@ use std::{str::FromStr, time::Duration};
 use std::{env, net::SocketAddr};
 
 mod controllers;
-use controllers::proposals::{get_proposals, create_proposal};
+use controllers::proposals::{
+    get_proposals, 
+    create_proposal, 
+    get_proof_of_inclusion, 
+    get_proof_of_absense
+};
 
 use crate::controllers::proposals::get_proposal;
 
@@ -84,6 +89,9 @@ async fn init_server(conn: DatabaseConnection) -> anyhow::Result<()> {
     let app = Router::new()
       .route("/proposal", get(get_proposals).post(create_proposal))
       .route("/proposal/:id", get(get_proposal))
+      .route("/proposal/:id/inclusion_proof", post(get_proof_of_inclusion))
+      .route("/proposal/:id/absense_proof", post(get_proof_of_absense))
+      
       //.route("/new", get(new_post))
       //.route("/delete/:id", post(delete_post))
       .layer(middleware)

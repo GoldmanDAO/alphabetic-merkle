@@ -2610,6 +2610,7 @@ dependencies = [
  "ethers",
  "rand",
  "rs_merkle",
+ "serde",
  "thiserror",
 ]
 
