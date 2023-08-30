@@ -28,12 +28,10 @@ pub async fn get_proposals(
 
     match proposals {
         Ok(proposals) => (StatusCode::OK, Json(json!(proposals))),
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": format!("[Invalid payload] {}", e)})),
-            )
-        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": format!("[Invalid payload] {}", e)})),
+        ),
     }
 }
 
@@ -42,12 +40,10 @@ pub async fn get_proposal(state: State<AppState>, Path(id): Path<i32>) -> impl I
 
     match proposals_with_accounts {
         Ok(proposal) => (StatusCode::OK, Json(json!(proposal))),
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": format!("{}", e)})),
-            )
-        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": format!("{}", e)})),
+        ),
     }
 }
 
@@ -92,12 +88,10 @@ pub async fn create_proposal(
 
     match proposals_with_accounts {
         Ok(r) => (StatusCode::CREATED, Json(json!(r))),
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": format!("{}", e)})),
-            )
-        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": format!("{}", e)})),
+        ),
     }
 }
 
@@ -123,12 +117,10 @@ pub async fn get_proof_of_inclusion(
 
     match res {
         Ok(proof) => (StatusCode::OK, Json(json!({"proof": hex::encode(proof)}))),
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": format!("{}", e)})),
-            )
-        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": format!("{}", e)})),
+        ),
     }
 }
 
@@ -162,11 +154,9 @@ pub async fn get_proof_of_absense(
             };
             (StatusCode::OK, Json(json!({"proof": hex_proof })))
         }
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": format!("{}", e)})),
-            )
-        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": format!("{}", e)})),
+        ),
     }
 }

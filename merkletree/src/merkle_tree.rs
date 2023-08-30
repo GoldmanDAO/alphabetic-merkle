@@ -35,13 +35,13 @@ fn order_accounts(accounts: &[AccountWithBalance]) -> Vec<AccountWithBalance> {
     accounts
 }
 
-fn create_merkle_tree(accounts: &Vec<AccountWithBalance>) -> MerkleTree<Keccak256Algorithm> {
+fn create_merkle_tree(accounts: &[AccountWithBalance]) -> MerkleTree<Keccak256Algorithm> {
     let ordered_accounts = order_accounts(accounts);
     let leaves: Vec<[u8; 32]> = ordered_accounts.iter().map(|x| x.generate_hash()).collect();
     MerkleTree::<Keccak256Algorithm>::from_leaves(&leaves)
 }
 
-pub fn get_merkle_root(accounts: &Vec<AccountWithBalance>) -> Result<[u8; 32], Error> {
+pub fn get_merkle_root(accounts: &[AccountWithBalance]) -> Result<[u8; 32], Error> {
     if accounts.is_empty() {
         return Err(Error::EmptyAccountsListError);
     }
@@ -72,7 +72,7 @@ fn find_adjacents(
     accounts: &Vec<AccountWithBalance>,
     account: &AccountWithBalance,
 ) -> (Option<usize>, Option<usize>) {
-    let previous_index = accounts.iter().position(|x| x.gt(&account));
+    let previous_index = accounts.iter().position(|x| x.gt(account));
     match previous_index {
         Some(0) => {
             if account.lt(&accounts[0]) {
@@ -103,19 +103,13 @@ pub fn generate_proof_of_absense(
         return Err(Error::AccountAlreadyExistsError);
     };
 
-    let (previous_index_opt, next_index_opt) = find_adjacents(&accounts, &account);
+    let (previous_index_opt, next_index_opt) = find_adjacents(accounts, &account);
 
-    let left_proof = if let Some(previous_index) = previous_index_opt {
-        Some(merkle_tree.proof(&[previous_index]).to_bytes())
-    } else {
-        None
-    };
+    let left_proof: Option<Vec<u8>> =
+        previous_index_opt.map(|previous_index| merkle_tree.proof(&[previous_index]).to_bytes());
 
-    let right_proof = if let Some(next_index) = next_index_opt {
-        Some(merkle_tree.proof(&[next_index]).to_bytes())
-    } else {
-        None
-    };
+    let right_proof: Option<Vec<u8>> =
+        next_index_opt.map(|next_index| merkle_tree.proof(&[next_index]).to_bytes());
 
     Ok((left_proof, right_proof))
 }
