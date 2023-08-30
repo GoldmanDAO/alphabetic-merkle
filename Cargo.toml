@@ -7,3 +7,6 @@ members = [
   "migration", 
   "services"
 ]
+
+[profile.release]
+lto = true
