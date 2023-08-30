@@ -10,6 +10,7 @@ ethers = "2.0.9"
 rs_merkle = "1.4.1"
 thiserror = "1.0.47"
 rand = "0.8.5"
+serde = "1.0.188"
 
 [dev-dependencies]
 criterion = "0.5.1"

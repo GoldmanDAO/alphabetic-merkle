@@ -3,8 +3,9 @@ use ethers::{
   types::{Address, U256},
   utils::keccak256
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct AccountWithBalance {
     pub address: Address,
     pub balance: U256,
