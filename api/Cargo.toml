@@ -9,6 +9,7 @@ edition = "2021"
 axum = "0.6.20"
 entity = { path = "../entity" }
 services = { path = "../services" }
+migration = { path = "../migration" }
 merkletree = { path = "../merkletree" }
 thiserror = "1.0.47"
 tokio = { version = "1.15.0", features = ["full"] }

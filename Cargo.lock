@@ -167,6 +167,7 @@ dependencies = [
  "entity",
  "ethers",
  "merkletree",
+ "migration",
  "sea-orm",
  "serde",
  "serde_json",

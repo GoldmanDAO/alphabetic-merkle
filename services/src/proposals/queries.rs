@@ -1,4 +1,3 @@
-use sea_orm::{TransactionTrait, Set};
 use sea_orm:: {
   DatabaseConnection, 
   error::DbErr,
@@ -7,12 +6,13 @@ use sea_orm:: {
   RuntimeErr,
   QueryOrder,
   PaginatorTrait,
+  TransactionTrait, 
+  Set,
 };
 use ethers::utils::hex;
 
 use entity::prelude::*;
 use crate::utils::pagination::Pagination;
-use crate::utils::errors::get_sql_error;
 use merkletree::{
   merkle_tree::{
     get_merkle_root,
@@ -102,16 +102,4 @@ pub async fn insert_proposal(db: &DatabaseConnection, mut proposal_data: Proposa
   .ok_or(DbErr::Custom("Error creating proposal".to_string()))?;
 
   Ok(proposal_id)
-
-  /* 
-  match proposal_data.save(db).await {
-    Ok(proposal) => Ok(proposal),
-    Err(error) => {
-      match get_sql_error(error) {
-        sqlx::error::ErrorKind::CheckViolation => Err(DbErr::Type("Invalid author address".to_string())),
-        _ => Err(DbErr::Custom("Error creating proposal".to_string()))
-      }
-    },
-  }
-  */
 }

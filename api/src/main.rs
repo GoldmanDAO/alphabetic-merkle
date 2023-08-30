@@ -8,6 +8,7 @@ use sea_orm:: {
   DatabaseConnection, 
   ConnectOptions,
 };
+use migration::{Migrator, MigratorTrait};
 
 use tower::ServiceBuilder;
 use tower_http::{
@@ -42,9 +43,10 @@ async fn init_database() ->  anyhow::Result<DatabaseConnection> {
     .idle_timeout(Duration::from_secs(8))
     .max_lifetime(Duration::from_secs(8))
     .sqlx_logging(true);
-    //.sqlx_logging_level(log::LevelFilter::Info)
 
   let db = Database::connect(opt).await?;
+  Migrator::up(&db, None).await.unwrap();
+
   Ok(db)
 }
 
@@ -104,7 +106,6 @@ async fn start() -> anyhow::Result<()> {
   init_tracing().await;
 
   let conn = init_database().await?;
-  // Migrator::up(&conn, None).await.unwrap();
 
   init_server(conn).await?;
 
