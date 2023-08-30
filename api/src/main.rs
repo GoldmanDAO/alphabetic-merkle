@@ -91,9 +91,6 @@ async fn init_server(conn: DatabaseConnection) -> anyhow::Result<()> {
       .route("/proposal/:id", get(get_proposal))
       .route("/proposal/:id/inclusion_proof", post(get_proof_of_inclusion))
       .route("/proposal/:id/absense_proof", post(get_proof_of_absense))
-      
-      //.route("/new", get(new_post))
-      //.route("/delete/:id", post(delete_post))
       .layer(middleware)
       .with_state(state);
 

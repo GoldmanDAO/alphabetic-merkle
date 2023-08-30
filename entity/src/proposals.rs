@@ -16,6 +16,9 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub root_hash: String,
     pub created_at: Option<DateTime>,
+    #[sea_orm(ignore)]
+    #[serde(skip_deserializing)]
+    pub accounts: Vec<super::accounts::Model>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

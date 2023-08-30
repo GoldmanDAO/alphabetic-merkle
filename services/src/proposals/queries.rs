@@ -38,6 +38,19 @@ pub async fn get_proposals_by_id(db: &DatabaseConnection, id: i32) -> Result<Pro
   }
 }
 
+pub async fn get_proposal_with_accounts(db: &DatabaseConnection, id: i32) -> Result<ProposalsModel, DbErr> {
+  let proposal_res = Proposals::find_by_id(id)
+    .find_with_related(Accounts)
+    .all(db).await?;
+
+  proposal_res.first().ok_or(DbErr::Query(RuntimeErr::SqlxError(sqlx::error::Error::RowNotFound)))
+    .map(|(proposal, accounts)| {
+      let mut proposal = proposal.clone();
+      proposal.accounts = accounts.clone();
+      proposal
+    })
+}
+
 pub async fn insert_proposal(db: &DatabaseConnection, proposal_data: ProposalsActiveModel) -> Result<ProposalsActiveModel, DbErr> {
   match proposal_data.save(db).await {
     Ok(proposal) => Ok(proposal),
