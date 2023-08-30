@@ -16,7 +16,7 @@ impl MigrationTrait for Migration {
                 ipfs_hash TEXT NOT NULL,
                 root_hash TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT NOW()
-            );"
+            );",
         )
         .await?;
         Ok(())

@@ -12,7 +12,7 @@ impl MigrationTrait for Migration {
             "ALTER TABLE accounts 
                 ADD CONSTRAINT fk_proposal_id
                 FOREIGN KEY (proposal_id) 
-                REFERENCES proposals (id);"
+                REFERENCES proposals (id);",
         )
         .await?;
         Ok(())

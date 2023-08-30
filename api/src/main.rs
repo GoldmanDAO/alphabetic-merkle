@@ -1,66 +1,58 @@
 use anyhow::Ok;
 use axum::{
-  routing::{get, post},
-  Router, Server,
-};
-use sea_orm:: {
-  Database, 
-  DatabaseConnection, 
-  ConnectOptions,
+    routing::{get, post},
+    Router, Server,
 };
 use migration::{Migrator, MigratorTrait};
+use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
 use tower::ServiceBuilder;
 use tower_http::{
     timeout::TimeoutLayer,
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
-    LatencyUnit,
-    ServiceBuilderExt,
+    LatencyUnit, ServiceBuilderExt,
 };
 
-use tracing_subscriber::{Registry, prelude::__tracing_subscriber_SubscriberExt, Layer, filter::LevelFilter};
-use std::{str::FromStr, time::Duration};
 use std::{env, net::SocketAddr};
+use std::{str::FromStr, time::Duration};
+use tracing_subscriber::{
+    filter::LevelFilter, prelude::__tracing_subscriber_SubscriberExt, Layer, Registry,
+};
 
 mod controllers;
 use controllers::proposals::{
-    get_proposals, 
-    create_proposal, 
-    get_proof_of_inclusion, 
-    get_proof_of_absense
+    create_proposal, get_proof_of_absense, get_proof_of_inclusion, get_proposals,
 };
 
 use crate::controllers::proposals::get_proposal;
 
-async fn init_database() ->  anyhow::Result<DatabaseConnection> {
-  let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+async fn init_database() -> anyhow::Result<DatabaseConnection> {
+    let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-  let mut opt = ConnectOptions::new(db_url); //TODO Use env var
-  opt.max_connections(100)
-    .min_connections(5)
-    .connect_timeout(Duration::from_secs(8))
-    .acquire_timeout(Duration::from_secs(8))
-    .idle_timeout(Duration::from_secs(8))
-    .max_lifetime(Duration::from_secs(8))
-    .sqlx_logging(true);
+    let mut opt = ConnectOptions::new(db_url); //TODO Use env var
+    opt.max_connections(100)
+        .min_connections(5)
+        .connect_timeout(Duration::from_secs(8))
+        .acquire_timeout(Duration::from_secs(8))
+        .idle_timeout(Duration::from_secs(8))
+        .max_lifetime(Duration::from_secs(8))
+        .sqlx_logging(true);
 
-  let db = Database::connect(opt).await?;
-  Migrator::up(&db, None).await.unwrap();
+    let db = Database::connect(opt).await?;
+    Migrator::up(&db, None).await.unwrap();
 
-  Ok(db)
+    Ok(db)
 }
 
 async fn init_tracing() {
-  let stdout_log = tracing_subscriber::fmt::Layer::new()
-    .with_writer(std::io::stdout)
-    .pretty()
-    .with_filter(LevelFilter::DEBUG);
+    let stdout_log = tracing_subscriber::fmt::Layer::new()
+        .with_writer(std::io::stdout)
+        .pretty()
+        .with_filter(LevelFilter::DEBUG);
 
-  let subscriber = Registry::default()
-    .with(stdout_log);
+    let subscriber = Registry::default().with(stdout_log);
 
-  tracing::subscriber::set_global_default(subscriber)
-    .expect("setting tracing failed");
+    tracing::subscriber::set_global_default(subscriber).expect("setting tracing failed");
 }
 
 async fn init_server(conn: DatabaseConnection) -> anyhow::Result<()> {
@@ -89,12 +81,15 @@ async fn init_server(conn: DatabaseConnection) -> anyhow::Result<()> {
         .compression();
 
     let app = Router::new()
-      .route("/proposal", get(get_proposals).post(create_proposal))
-      .route("/proposal/:id", get(get_proposal))
-      .route("/proposal/:id/inclusion_proof", post(get_proof_of_inclusion))
-      .route("/proposal/:id/absense_proof", post(get_proof_of_absense))
-      .layer(middleware)
-      .with_state(state);
+        .route("/proposal", get(get_proposals).post(create_proposal))
+        .route("/proposal/:id", get(get_proposal))
+        .route(
+            "/proposal/:id/inclusion_proof",
+            post(get_proof_of_inclusion),
+        )
+        .route("/proposal/:id/absense_proof", post(get_proof_of_absense))
+        .layer(middleware)
+        .with_state(state);
 
     let addr = SocketAddr::from_str(&server_url).unwrap();
     Server::bind(&addr).serve(app.into_make_service()).await?;
@@ -103,18 +98,18 @@ async fn init_server(conn: DatabaseConnection) -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn start() -> anyhow::Result<()> {
-  init_tracing().await;
+    init_tracing().await;
 
-  let conn = init_database().await?;
+    let conn = init_database().await?;
 
-  init_server(conn).await?;
+    init_server(conn).await?;
 
-  Ok(())
+    Ok(())
 }
 
 #[derive(Clone)]
 pub struct AppState {
-  conn: DatabaseConnection,
+    conn: DatabaseConnection,
 }
 
 pub fn main() {
