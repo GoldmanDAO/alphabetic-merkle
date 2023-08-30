@@ -1,7 +1,8 @@
-use anyhow::{Ok, Error};
+use anyhow::{Error, Ok};
 use axum::{
+    response::Response,
     routing::{get, post},
-    Router, Server, response::Response,
+    Router, Server,
 };
 use migration::{Migrator, MigratorTrait};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
@@ -21,7 +22,8 @@ use tracing_subscriber::{
 
 mod controllers;
 use controllers::proposals::{
-    create_proposal, get_proof_of_absense, get_proof_of_inclusion, get_proposals, download_accounts_csv,
+    create_proposal, download_accounts_csv, get_proof_of_absense, get_proof_of_inclusion,
+    get_proposals,
 };
 
 use crate::controllers::proposals::get_proposal;
