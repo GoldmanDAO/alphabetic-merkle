@@ -9,6 +9,7 @@ edition = "2021"
 axum = "0.6.20"
 entity = { path = "../entity" }
 services = { path = "../services" }
+merkletree = { path = "../merkletree" }
 thiserror = "1.0.47"
 tokio = { version = "1.15.0", features = ["full"] }
 tracing = "0.1.37"
@@ -17,4 +18,6 @@ sea-orm = { version = "0.12.2", features = ["sqlx-postgres", "runtime-tokio-nati
 serde_json = "1.0.105"
 serde = "1.0.188"
 anyhow = "1.0.75"
-tower-http = { version="0.4.3", features = ["timeout", "compresion-gzip", ] }
+tower-http = { version="0.4.3", features = ["timeout", "compression-gzip", "trace", "map-response-body", "util" ] }
+tower = "0.4.13"
+ethers = "2.0.9"

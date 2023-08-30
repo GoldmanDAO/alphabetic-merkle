@@ -1,5 +1,3 @@
-
-use entity::prelude::*;
 use sea_orm:: {
   DatabaseConnection, 
   error::DbErr,
@@ -10,19 +8,9 @@ use sea_orm:: {
   PaginatorTrait,
 };
 
-use super::pagination::Pagination;
-
-fn get_sql_error(error: DbErr) -> sqlx::error::ErrorKind {
-  match error {
-    DbErr::Query(RuntimeErr::SqlxError(sql_error)) => match sql_error {
-        sqlx::Error::Database(e) => {
-          e.kind()
-        }
-        _ => panic!("Unexpected database error: {:?}", sql_error),
-    },
-    _ => panic!("Unexpected database error: {:?}", error)
-  }
-}
+use entity::prelude::*;
+use crate::utils::pagination::Pagination;
+use crate::utils::errors::get_sql_error;
 
 async fn list_proposals_paginated(db: &DatabaseConnection, pag: Pagination) -> Result<Vec<ProposalsModel>, DbErr> {
   if !pag.check_range() {
@@ -37,6 +25,17 @@ paginated_proposals.fetch_page(pag.page).await
 
 pub async fn list_proposals(db: &DatabaseConnection, pag: Option<Pagination>) -> Result<Vec<ProposalsModel>, DbErr> {
   list_proposals_paginated(db, pag.unwrap_or_default()).await
+}
+
+pub async fn get_proposals_by_id(db: &DatabaseConnection, id: i32) -> Result<ProposalsModel, DbErr> {
+  let proposal_res = Proposals::find_by_id(id).one(db).await;
+  match proposal_res {
+    Ok(proposal_opt) => match proposal_opt {
+      Some(proposal) => Ok(proposal),
+      None => Err(DbErr::Query(RuntimeErr::SqlxError(sqlx::error::Error::RowNotFound))),
+    }
+    Err(error) => Err(error),
+  }
 }
 
 pub async fn insert_proposal(db: &DatabaseConnection, proposal_data: ProposalsActiveModel) -> Result<ProposalsActiveModel, DbErr> {

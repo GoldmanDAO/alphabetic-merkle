@@ -9,12 +9,22 @@ use sea_orm:: {
   ConnectOptions,
 };
 
+use tower::ServiceBuilder;
+use tower_http::{
+    timeout::TimeoutLayer,
+    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+    LatencyUnit,
+    ServiceBuilderExt,
+};
+
 use tracing_subscriber::{Registry, prelude::__tracing_subscriber_SubscriberExt, Layer, filter::LevelFilter};
 use std::{str::FromStr, time::Duration};
 use std::{env, net::SocketAddr};
 
 mod controllers;
 use controllers::proposals::{get_proposals, create_proposal};
+
+use crate::controllers::proposals::get_proposal;
 
 async fn init_database() ->  anyhow::Result<DatabaseConnection> {
   let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
@@ -52,12 +62,31 @@ async fn init_server(conn: DatabaseConnection) -> anyhow::Result<()> {
     let server_url = format!("{host}:{port}");
 
     let state = AppState { conn };
+    use axum::body::Bytes;
+    // Build our middleware stack
+    let middleware = ServiceBuilder::new()
+        // Add high level tracing/logging to all requests
+        .layer(
+            TraceLayer::new_for_http()
+                .on_body_chunk(|chunk: &Bytes, latency: Duration, _: &tracing::Span| {
+                    tracing::trace!(size_bytes = chunk.len(), latency = ?latency, "sending body chunk")
+                })
+                .make_span_with(DefaultMakeSpan::new().include_headers(true))
+                .on_response(DefaultOnResponse::new().include_headers(true).latency_unit(LatencyUnit::Micros)),
+        )
+        // Set a timeout
+        .layer(TimeoutLayer::new(Duration::from_secs(10)))
+        // Box the response body so it implements `Default` which is required by axum
+        .map_response_body(axum::body::boxed)
+        // Compress responses
+        .compression();
 
     let app = Router::new()
-      .route("/", get(get_proposals).post(create_proposal))
-      //.route("/:id", get(edit_post).post(update_post))
+      .route("/proposal", get(get_proposals).post(create_proposal))
+      .route("/proposal/:id", get(get_proposal))
       //.route("/new", get(new_post))
       //.route("/delete/:id", post(delete_post))
+      .layer(middleware)
       .with_state(state);
 
     let addr = SocketAddr::from_str(&server_url).unwrap();
@@ -67,8 +96,6 @@ async fn init_server(conn: DatabaseConnection) -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn start() -> anyhow::Result<()> {
-  env::set_var("RUST_LOG", "debug");
-  
   init_tracing().await;
 
   let conn = init_database().await?;
@@ -83,136 +110,6 @@ async fn start() -> anyhow::Result<()> {
 pub struct AppState {
   conn: DatabaseConnection,
 }
-
-/*
-#[derive(Deserialize)]
-struct Params {
-    page: Option<u64>,
-    posts_per_page: Option<u64>,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-struct FlashData {
-    kind: String,
-    message: String,
-}
-
-async fn list_posts(
-    state: State<AppState>,
-    Query(params): Query<Params>,
-    cookies: Cookies,
-) -> Result<Html<String>, (StatusCode, &'static str)> {
-    let page = params.page.unwrap_or(1);
-    let posts_per_page = params.posts_per_page.unwrap_or(5);
-
-    let (posts, num_pages) = QueryCore::find_posts_in_page(&state.conn, page, posts_per_page)
-        .await
-        .expect("Cannot find posts in page");
-
-    let mut ctx = tera::Context::new();
-    ctx.insert("posts", &posts);
-    ctx.insert("page", &page);
-    ctx.insert("posts_per_page", &posts_per_page);
-    ctx.insert("num_pages", &num_pages);
-
-    if let Some(value) = get_flash_cookie::<FlashData>(&cookies) {
-        ctx.insert("flash", &value);
-    }
-
-    let body = state
-        .templates
-        .render("index.html.tera", &ctx)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Template error"))?;
-
-    Ok(Html(body))
-}
-
-async fn new_post(state: State<AppState>) -> Result<Html<String>, (StatusCode, &'static str)> {
-    let ctx = tera::Context::new();
-    let body = state
-        .templates
-        .render("new.html.tera", &ctx)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Template error"))?;
-
-    Ok(Html(body))
-}
-
-async fn create_post(
-    state: State<AppState>,
-    mut cookies: Cookies,
-    form: Form<post::Model>,
-) -> Result<PostResponse, (StatusCode, &'static str)> {
-    let form = form.0;
-
-    MutationCore::create_post(&state.conn, form)
-        .await
-        .expect("could not insert post");
-
-    let data = FlashData {
-        kind: "success".to_owned(),
-        message: "Post succcessfully added".to_owned(),
-    };
-
-    Ok(post_response(&mut cookies, data))
-}
-
-async fn edit_post(
-    state: State<AppState>,
-    Path(id): Path<i32>,
-) -> Result<Html<String>, (StatusCode, &'static str)> {
-    let post: post::Model = QueryCore::find_post_by_id(&state.conn, id)
-        .await
-        .expect("could not find post")
-        .unwrap_or_else(|| panic!("could not find post with id {id}"));
-
-    let mut ctx = tera::Context::new();
-    ctx.insert("post", &post);
-
-    let body = state
-        .templates
-        .render("edit.html.tera", &ctx)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Template error"))?;
-
-    Ok(Html(body))
-}
-
-async fn update_post(
-    state: State<AppState>,
-    Path(id): Path<i32>,
-    mut cookies: Cookies,
-    form: Form<post::Model>,
-) -> Result<PostResponse, (StatusCode, String)> {
-    let form = form.0;
-
-    MutationCore::update_post_by_id(&state.conn, id, form)
-        .await
-        .expect("could not edit post");
-
-    let data = FlashData {
-        kind: "success".to_owned(),
-        message: "Post succcessfully updated".to_owned(),
-    };
-
-    Ok(post_response(&mut cookies, data))
-}
-
-async fn delete_post(
-    state: State<AppState>,
-    Path(id): Path<i32>,
-    mut cookies: Cookies,
-) -> Result<PostResponse, (StatusCode, &'static str)> {
-    MutationCore::delete_post(&state.conn, id)
-        .await
-        .expect("could not delete post");
-
-    let data = FlashData {
-        kind: "success".to_owned(),
-        message: "Post succcessfully deleted".to_owned(),
-    };
-
-    Ok(post_response(&mut cookies, data))
-}
-*/
 
 pub fn main() {
     let result = start();

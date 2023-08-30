@@ -13,7 +13,7 @@ impl MigrationTrait for Migration {
                 proposal_id INT NOT NULL,
                 address address NOT NULL,
                 balance TEXT NOT NULL,
-                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                created_at TIMESTAMP DEFAULT NOW(),
                 PRIMARY KEY (proposal_id, address)
             );"
         )
