@@ -1,7 +1,7 @@
-use anyhow::Ok;
+use anyhow::{Ok, Error};
 use axum::{
     routing::{get, post},
-    Router, Server,
+    Router, Server, response::Response,
 };
 use migration::{Migrator, MigratorTrait};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
@@ -21,7 +21,7 @@ use tracing_subscriber::{
 
 mod controllers;
 use controllers::proposals::{
-    create_proposal, get_proof_of_absense, get_proof_of_inclusion, get_proposals,
+    create_proposal, get_proof_of_absense, get_proof_of_inclusion, get_proposals, download_accounts_csv,
 };
 
 use crate::controllers::proposals::get_proposal;
@@ -88,6 +88,7 @@ async fn init_server(conn: DatabaseConnection) -> anyhow::Result<()> {
             post(get_proof_of_inclusion),
         )
         .route("/proposal/:id/absense_proof", post(get_proof_of_absense))
+        .route("/proposal/:id/csv", get(download_accounts_csv))
         .layer(middleware)
         .with_state(state);
 

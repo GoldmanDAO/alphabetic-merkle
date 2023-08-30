@@ -1,8 +1,8 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
+    http::{header, HeaderValue, HeaderMap, StatusCode},
     Json,
+    response::IntoResponse,
 };
 use entity::prelude::*;
 use ethers::utils::hex;
@@ -159,4 +159,31 @@ pub async fn get_proof_of_absense(
             Json(json!({"error": format!("{}", e)})),
         ),
     }
+}
+
+pub async fn download_accounts_csv(
+    state: State<AppState>,
+    Path(proposal_id): Path<i32>,
+) -> impl IntoResponse {
+
+    let accounts_csv: String = get_accounts_by_proposal_id(&state.conn, proposal_id)
+        .await
+        .map(|accounts| 
+            accounts.iter().map(
+                |account| format!("{},{}", account.address, account.balance)
+            ).collect::<Vec<String>>()
+            .join("\n"))
+        .unwrap_or("".to_string());
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/csv; charset=utf-8"),
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_static("attachment; filename=\"accounts.csv\""),
+    );
+
+    (headers, accounts_csv)
 }

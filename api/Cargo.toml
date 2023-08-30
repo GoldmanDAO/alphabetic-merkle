@@ -21,3 +21,4 @@ anyhow = "1.0.75"
 tower-http = { version="0.4.3", features = ["timeout", "compression-gzip", "trace", "map-response-body", "util" ] }
 tower = "0.4.13"
 ethers = "2.0.9"
+tokio-util = "0.7.8"
