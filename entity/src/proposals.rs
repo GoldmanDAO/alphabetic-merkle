@@ -20,6 +20,7 @@ pub struct Model {
     pub created_at: Option<DateTime>,
     #[sea_orm(ignore)]
     #[serde(skip_deserializing)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub accounts: Vec<super::accounts::Model>,
 }
 

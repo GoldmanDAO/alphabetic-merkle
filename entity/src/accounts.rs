@@ -7,11 +7,14 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     #[serde(skip_deserializing)]
+    #[serde(skip_serializing)]
     pub proposal_id: i32,
     #[sea_orm(primary_key, auto_increment = false)]
     pub address: String,
     #[sea_orm(column_type = "Text")]
     pub balance: String,
+    #[serde(skip_deserializing)]
+    #[serde(skip_serializing)]
     pub created_at: Option<DateTime>,
 }
 
