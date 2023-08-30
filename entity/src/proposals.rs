@@ -14,7 +14,9 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub ipfs_hash: String,
     #[sea_orm(column_type = "Text")]
+    #[serde(skip_deserializing)]
     pub root_hash: String,
+    #[serde(skip_deserializing)]
     pub created_at: Option<DateTime>,
     #[sea_orm(ignore)]
     #[serde(skip_deserializing)]

@@ -1,7 +1,7 @@
 use axum::{extract::{State, Path}, Json, http::StatusCode, response::IntoResponse};
-use sea_orm::{ActiveModelTrait, Set, EntityTrait, TransactionTrait, error::DbErr, DatabaseConnection};
+use sea_orm::{ActiveModelTrait, error::DbErr, DatabaseConnection};
 use entity::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use ethers::utils::hex;
 use services::proposals::queries:: {
@@ -13,10 +13,9 @@ use services::accounts::queries::get_accounts_by_proposal_id;
 use services::utils::pagination::Pagination;
 use merkletree::{
   merkle_tree::{
-    get_merkle_root,
     generate_proof_of_inclusion,
-    generate_proof_of_absense, Error
-  }, 
+    generate_proof_of_absense,
+  },
   account_with_balance::AccountWithBalance
 };
 
@@ -47,75 +46,41 @@ pub async fn get_proposal(
   }
 }
 
-#[derive(Deserialize)]
-pub struct ProposalsWithAccountsActiveModel {
-  proposal: Value,
-  accounts: Vec<Value>
+#[derive(Deserialize, Serialize)]
+pub struct NewAccount {
+  pub address: String,
+  pub balance: String
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct NewProposal {
+  pub author: String,
+  pub block_number: i64,
+  pub ipfs_hash: String,
+  pub accounts: Vec<NewAccount>
+}
+
+async fn insert_proposal_with_accounts(db: &DatabaseConnection, proposal_data: ProposalsActiveModel, accounts_data: Vec<AccountsActiveModel>) -> Result<ProposalsModel, DbErr> {
+  let proposal_id = insert_proposal(db, proposal_data, accounts_data).await?;
+  let proposals_with_accounts = get_proposal_with_accounts(db, proposal_id).await?;
+  Ok(proposals_with_accounts)
 }
 
 pub async fn create_proposal(
   state: State<AppState>,
-  Json(payload): Json<ProposalsWithAccountsActiveModel>,
+  Json(payload): Json<NewProposal>,
 ) -> (StatusCode, Json<Value>) {
+  let proposal_data: ProposalsActiveModel = ProposalsActiveModel::from_json(json!(payload)).unwrap();
+  let accounts_data: Vec<AccountsActiveModel> = payload.accounts.iter().map(|account| {
+    AccountsActiveModel::from_json(json!(account)).unwrap()
+  }).collect();
 
-  let res: Result<ProposalsModel, DbErr> = create_proposal_transaction(&state.conn, payload.proposal, payload.accounts).await;
+  let proposals_with_accounts = insert_proposal_with_accounts(&state.conn, proposal_data, accounts_data).await;
 
-  match res {
+  match proposals_with_accounts {
     Ok(r) => (StatusCode::CREATED, Json(json!(r))),
     Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"error": format!("{}", e)})))
   }
-}
-
-fn get_merkletree_root(accounts: Vec<AccountsActiveModel>) -> Result<String, Error> {
-  let accounts: Vec<AccountWithBalance> = accounts.iter().map(|account| {
-    let address = account.address.clone().take();
-    let balance = account.balance.clone().take();
-    match (address, balance) {
-        (Some(address), Some(balance)) => AccountWithBalance::new(address.as_str(), balance.as_str()),
-        _ => panic!("Error getting accounts") //TODO: handle error
-    }
-  }).collect();
-  let merkle_root = get_merkle_root(&accounts)?;
-  Ok(hex::encode(merkle_root))
-}
-
-async fn create_proposal_transaction(
-  db: &DatabaseConnection,
-  proposal_json: Value,
-  accounts_json: Vec<Value>
-) -> Result<ProposalsModel, DbErr> {
-  let proposal_data = ProposalsActiveModel::from_json(proposal_json)?;
-
-  let proposal_id = db.transaction::<_, Option<i32>, DbErr>(|txn| {
-    Box::pin(async move {
-      let mut proposal: ProposalsActiveModel = proposal_data
-        .save(txn)
-        .await?;
-
-      let accounts: Vec<AccountsActiveModel> = accounts_json.iter().map(|account_json| {
-        let mut account_model = AccountsActiveModel::from_json(account_json.clone()).unwrap();
-        account_model.set(AccountsBase::Column::ProposalId,proposal.id.clone().into_value().unwrap());
-        account_model
-      }).collect();
-
-      Accounts::insert_many(accounts.clone()).exec(txn).await?;
-
-      let proposal_id = proposal.id.clone().take();
-
-      let merkle_root = get_merkletree_root(accounts)
-        .map_err(|e| DbErr::Custom(format!("Error creating merkle tree: {}", e)))?;
-      proposal.root_hash = Set(merkle_root);
-      proposal.update(txn).await?;
-
-      Ok(proposal_id)
-    })
-  }).await
-  .map_err(|e: sea_orm::TransactionError<DbErr>| DbErr::Custom(e.to_string()))?
-  .ok_or(DbErr::Custom("Error creating proposal".to_string()))?;
-
-  let proposals_with_accounts: ProposalsModel = get_proposal_with_accounts(db, proposal_id).await?;
-
-  Ok(proposals_with_accounts)
 }
 
 pub async fn get_proof_of_inclusion(

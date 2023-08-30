@@ -1,3 +1,4 @@
+use sea_orm::{TransactionTrait, Set};
 use sea_orm:: {
   DatabaseConnection, 
   error::DbErr,
@@ -7,10 +8,18 @@ use sea_orm:: {
   QueryOrder,
   PaginatorTrait,
 };
+use ethers::utils::hex;
 
 use entity::prelude::*;
 use crate::utils::pagination::Pagination;
 use crate::utils::errors::get_sql_error;
+use merkletree::{
+  merkle_tree::{
+    get_merkle_root,
+    Error
+  }, 
+  account_with_balance::AccountWithBalance
+};
 
 async fn list_proposals_paginated(db: &DatabaseConnection, pag: Pagination) -> Result<Vec<ProposalsModel>, DbErr> {
   if !pag.check_range() {
@@ -51,7 +60,50 @@ pub async fn get_proposal_with_accounts(db: &DatabaseConnection, id: i32) -> Res
     })
 }
 
-pub async fn insert_proposal(db: &DatabaseConnection, proposal_data: ProposalsActiveModel) -> Result<ProposalsActiveModel, DbErr> {
+fn get_merkletree_root(accounts: Vec<AccountsActiveModel>) -> Result<String, Error> {
+  let accounts: Vec<AccountWithBalance> = accounts.iter().map(|account| {
+    let address = account.address.clone().take();
+    let balance = account.balance.clone().take();
+    match (address, balance) {
+        (Some(address), Some(balance)) => AccountWithBalance::new(address.as_str(), balance.as_str()),
+        _ => panic!("Error getting accounts") //TODO: handle error
+    }
+  }).collect();
+  let merkle_root = get_merkle_root(&accounts)?;
+  Ok(hex::encode(merkle_root))
+}
+
+pub async fn insert_proposal(db: &DatabaseConnection, mut proposal_data: ProposalsActiveModel, account_models: Vec<AccountsActiveModel>) -> Result<i32, DbErr> {
+
+  let proposal_id = db.transaction::<_, Option<i32>, DbErr>(|txn| {
+    Box::pin(async move {
+      let mut accounts = account_models.clone();
+
+      let merkle_root = get_merkletree_root(accounts.clone())
+        .map_err(|e| DbErr::Custom(format!("Error creating merkle tree: {}", e)))?;
+      proposal_data.root_hash = Set(merkle_root);
+
+      let proposal: ProposalsActiveModel = proposal_data
+        .save(txn)
+        .await?;
+
+      accounts.iter_mut().for_each(|account_model| {
+        account_model.set(AccountsBase::Column::ProposalId,proposal.id.clone().into_value().unwrap());
+      });
+
+      Accounts::insert_many(accounts.clone()).exec(txn).await?;
+
+      let proposal_id = proposal.id.clone().take();
+
+      Ok(proposal_id)
+    })
+  }).await
+  .map_err(|e: sea_orm::TransactionError<DbErr>| DbErr::Custom(e.to_string()))?
+  .ok_or(DbErr::Custom("Error creating proposal".to_string()))?;
+
+  Ok(proposal_id)
+
+  /* 
   match proposal_data.save(db).await {
     Ok(proposal) => Ok(proposal),
     Err(error) => {
@@ -61,4 +113,5 @@ pub async fn insert_proposal(db: &DatabaseConnection, proposal_data: ProposalsAc
       }
     },
   }
+  */
 }
