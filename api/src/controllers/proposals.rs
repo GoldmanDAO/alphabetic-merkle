@@ -1,170 +1,190 @@
-use axum::{extract::{State, Path}, Json, http::StatusCode, response::IntoResponse};
-use sea_orm::{ActiveModelTrait, TryIntoModel, Set, EntityTrait};
+use axum::{
+    extract::{Path, State},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::IntoResponse,
+    Json,
+};
 use entity::prelude::*;
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use ethers::utils::hex;
-use services::proposals::queries:: {
-  insert_proposal,
-  list_proposals,
-  get_proposals_by_id,
-};
-use services::accounts::queries::get_accounts_by_proposal_id;
-use services::utils::pagination::Pagination;
 use merkletree::{
-  merkle_tree::{
-    get_merkle_root,
-    generate_proof_of_inclusion,
-    generate_proof_of_absense
-  }, 
-  account_with_balance::AccountWithBalance
+    account_with_balance::AccountWithBalance,
+    merkle_tree::{generate_proof_of_absense, generate_proof_of_inclusion},
 };
+use sea_orm::{error::DbErr, ActiveModelTrait, DatabaseConnection};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use services::accounts::queries::get_accounts_by_proposal_id;
+use services::proposals::queries::{get_proposal_with_accounts, insert_proposal, list_proposals};
+use services::utils::pagination::Pagination;
 
 use crate::AppState;
 
 pub async fn get_proposals(
-  state: State<AppState>,
-  payload: Option<Json<Pagination>>,
+    state: State<AppState>,
+    payload: Option<Json<Pagination>>,
 ) -> impl IntoResponse {
-  let pag = payload.map(|Json(payload)| payload);
-  let proposals = list_proposals(&state.conn, pag).await;
+    let pag = payload.map(|Json(payload)| payload);
+    let proposals = list_proposals(&state.conn, pag).await;
 
-  match proposals {
-    Ok(proposals) => (StatusCode::OK, Json(json!(proposals))),
-    Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"error": format!("[Invalid payload] {}", e)})))
-  }
+    match proposals {
+        Ok(proposals) => (StatusCode::OK, Json(json!(proposals))),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": format!("[Invalid payload] {}", e)})),
+        ),
+    }
 }
 
-pub async fn get_proposal(
-  state: State<AppState>,
-  Path(id): Path<i32>,
-) -> impl IntoResponse {
-  let proposal = get_proposals_by_id(&state.conn, id).await;
-  
-  let proposal_with_accounts = match proposal {
-    Ok(proposal) => {
-      let accounts = get_accounts_by_proposal_id(&state.conn, id).await;
-      let accounts = match accounts {
-        Ok(accounts) => accounts,
-        Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"error": format!("{}", e)})))
-      };
-      let proposal = proposal.try_into_model().unwrap();
+pub async fn get_proposal(state: State<AppState>, Path(id): Path<i32>) -> impl IntoResponse {
+    let proposals_with_accounts = get_proposal_with_accounts(&state.conn, id).await;
 
-      #[derive(Serialize)]
-      struct ProposalWithAccounts {
-        proposal: ProposalsModel,
-        accounts: Vec<AccountsModel>
-      };
-
-      let proposal_with_accounts = ProposalWithAccounts {
-        proposal,
-        accounts
-      };
-      proposal_with_accounts
-    },
-    Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"error": format!("{}", e)})))
-  };
-
-  (StatusCode::OK, Json(json!(proposal_with_accounts)))
+    match proposals_with_accounts {
+        Ok(proposal) => (StatusCode::OK, Json(json!(proposal))),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": format!("{}", e)})),
+        ),
+    }
 }
 
-#[derive(Deserialize)]
-struct ProposalsWithAccountsActiveModel {
-  proposal: Value,
-  accounts: Vec<Value>
+#[derive(Deserialize, Serialize)]
+pub struct NewAccount {
+    pub address: String,
+    pub balance: String,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct NewProposal {
+    pub author: String,
+    pub block_number: i64,
+    pub ipfs_hash: String,
+    pub accounts: Vec<NewAccount>,
+}
+
+async fn insert_proposal_with_accounts(
+    db: &DatabaseConnection,
+    proposal_data: ProposalsActiveModel,
+    accounts_data: Vec<AccountsActiveModel>,
+) -> Result<ProposalsModel, DbErr> {
+    let proposal_id = insert_proposal(db, proposal_data, accounts_data).await?;
+    let proposals_with_accounts = get_proposal_with_accounts(db, proposal_id).await?;
+    Ok(proposals_with_accounts)
 }
 
 pub async fn create_proposal(
-  state: State<AppState>,
-  Json(payload): Json<Value>,
+    state: State<AppState>,
+    Json(payload): Json<NewProposal>,
 ) -> (StatusCode, Json<Value>) {
-  let req: ProposalsWithAccountsActiveModel = serde_json::from_value(payload.clone()).unwrap();
-  let proposal_data = ProposalsActiveModel::from_json(req.proposal);
-  
-  match proposal_data {
-    Ok(proposal) => {
-      let proposal: Result<ProposalsActiveModel, sea_orm::DbErr> = insert_proposal(&state.conn, proposal).await;
-      let proposal: Result<(), sea_orm::DbErr> = match proposal {
-        Ok(proposal) => {
-          let accounts: Vec<AccountsActiveModel> = req.accounts.iter()
-          .map(|account| {
-            let mut account_model = AccountsActiveModel::from_json(account.clone()).unwrap();
-            account_model.set(AccountsBase::Column::ProposalId,proposal.id.clone().into_value().unwrap());
-            account_model
-          })
-          .collect();
+    let proposal_data: ProposalsActiveModel =
+        ProposalsActiveModel::from_json(json!(payload)).unwrap();
+    let accounts_data: Vec<AccountsActiveModel> = payload
+        .accounts
+        .iter()
+        .map(|account| AccountsActiveModel::from_json(json!(account)).unwrap())
+        .collect();
 
-          let res = Accounts::insert_many(accounts).exec(&state.conn).await;
-          match res {
-            Ok(r) => {
-              let proposal = proposal.try_into_model().unwrap();
+    let proposals_with_accounts =
+        insert_proposal_with_accounts(&state.conn, proposal_data, accounts_data).await;
 
-              let accounts: Vec<AccountsModel> = get_accounts_by_proposal_id(&state.conn, proposal.id.clone()).await.unwrap();
-              let accounts: Vec<AccountWithBalance> = accounts.iter().map(|account| {
-                AccountWithBalance::new(account.address.clone().as_str(), account.balance.clone().as_str())
-              }).collect();
-              let merkle_root = get_merkle_root(&accounts).unwrap();
-              let merkle_root = hex::encode(merkle_root);
-              let mut proposal: ProposalsActiveModel = proposal.into();
-              proposal.root_hash = Set(merkle_root.clone());
-              let proposal = proposal.update(&state.conn).await;
-            }
-            Err(e) => ()
-          }
-          Ok(())
-        },
-        Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"error": format!("{}", e)})))
-      };
-      
-      (StatusCode::CREATED, Json(json!("{}")))
+    match proposals_with_accounts {
+        Ok(r) => (StatusCode::CREATED, Json(json!(r))),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": format!("{}", e)})),
+        ),
     }
-    Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"error": format!("[Invalid payload] {}", e)})))
-  }
 }
 
 pub async fn get_proof_of_inclusion(
-  state: State<AppState>,
-  Path(proposal_id): Path<i32>,
-  Json(account): Json<AccountWithBalance>,
+    state: State<AppState>,
+    Path(proposal_id): Path<i32>,
+    Json(account): Json<AccountWithBalance>,
 ) -> (StatusCode, Json<Value>) {
-  let accounts = get_accounts_by_proposal_id(&state.conn, proposal_id).await.unwrap();
-  let accounts_with_balance: Vec<AccountWithBalance> = accounts.iter().map(|account| {
-    AccountWithBalance::new(account.address.clone().as_str(), account.balance.clone().as_str())
-  }).collect();
+    let accounts = get_accounts_by_proposal_id(&state.conn, proposal_id)
+        .await
+        .unwrap();
+    let accounts_with_balance: Vec<AccountWithBalance> = accounts
+        .iter()
+        .map(|account| {
+            AccountWithBalance::new(
+                account.address.clone().as_str(),
+                account.balance.clone().as_str(),
+            )
+        })
+        .collect();
 
-  let res = generate_proof_of_inclusion(&accounts_with_balance, account);
+    let res = generate_proof_of_inclusion(&accounts_with_balance, account);
 
-  match res {
-      Ok(proof) => (StatusCode::OK, Json(json!({"proof": hex::encode(proof)}))),
-      Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"error": format!("{}", e)})))
-  }
+    match res {
+        Ok(proof) => (StatusCode::OK, Json(json!({"proof": hex::encode(proof)}))),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": format!("{}", e)})),
+        ),
+    }
 }
 
 pub async fn get_proof_of_absense(
-  state: State<AppState>,
-  Path(proposal_id): Path<i32>,
-  Json(account): Json<AccountWithBalance>,
+    state: State<AppState>,
+    Path(proposal_id): Path<i32>,
+    Json(account): Json<AccountWithBalance>,
 ) -> (StatusCode, Json<Value>) {
-  let accounts = get_accounts_by_proposal_id(&state.conn, proposal_id).await.unwrap();
-  let accounts_with_balance: Vec<AccountWithBalance> = accounts.iter().map(|account| {
-    AccountWithBalance::new(account.address.clone().as_str(), account.balance.clone().as_str())
-  }).collect();
+    let accounts = get_accounts_by_proposal_id(&state.conn, proposal_id)
+        .await
+        .unwrap();
+    let accounts_with_balance: Vec<AccountWithBalance> = accounts
+        .iter()
+        .map(|account| {
+            AccountWithBalance::new(
+                account.address.clone().as_str(),
+                account.balance.clone().as_str(),
+            )
+        })
+        .collect();
 
-  let res = generate_proof_of_absense(&accounts_with_balance, account);
+    let res = generate_proof_of_absense(&accounts_with_balance, account);
 
-  match res {
-    Ok(proof) => {
-      let hex_proof = match proof {
-        (Some(left), Some(right)) => (hex::encode(left), hex::encode(right)),
-        (Some(left), None) => (hex::encode(left), "".to_string()),
-        (None, Some(right)) => ("".to_string(), hex::encode(right)),
-        (None, None) => ("".to_string(), "".to_string())
-      };
-      (StatusCode::OK, Json(json!({"proof": hex_proof })))
-    },
-    Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"error": format!("{}", e)})))
-  }
+    match res {
+        Ok(proof) => {
+            let hex_proof = match proof {
+                (Some(left), Some(right)) => (hex::encode(left), hex::encode(right)),
+                (Some(left), None) => (hex::encode(left), "".to_string()),
+                (None, Some(right)) => ("".to_string(), hex::encode(right)),
+                (None, None) => ("".to_string(), "".to_string()),
+            };
+            (StatusCode::OK, Json(json!({"proof": hex_proof })))
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": format!("{}", e)})),
+        ),
+    }
 }
 
+pub async fn download_accounts_csv(
+    state: State<AppState>,
+    Path(proposal_id): Path<i32>,
+) -> impl IntoResponse {
+    let accounts_csv: String = get_accounts_by_proposal_id(&state.conn, proposal_id)
+        .await
+        .map(|accounts| {
+            accounts
+                .iter()
+                .map(|account| format!("{},{}", account.address, account.balance))
+                .collect::<Vec<String>>()
+                .join("\n")
+        })
+        .unwrap_or("".to_string());
 
-//async fn get_proof_of_absense()
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/csv; charset=utf-8"),
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_static("attachment; filename=\"accounts.csv\""),
+    );
+
+    (headers, accounts_csv)
+}

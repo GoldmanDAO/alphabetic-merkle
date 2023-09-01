@@ -7,7 +7,8 @@ edition = "2021"
 
 [dependencies]
 entity = { path = "../entity" }
+merkletree = { path = "../merkletree" }
 sea-orm = { version = "0.12.2", features = ["sqlx-postgres", "runtime-tokio-native-tls", "with-uuid"] }
 serde = "1.0.188"
 sqlx = "0.7.1"
-
+ethers = "2.0.9"

@@ -15,7 +15,7 @@ impl MigrationTrait for Migration {
                 balance TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT NOW(),
                 PRIMARY KEY (proposal_id, address)
-            );"
+            );",
         )
         .await?;
         Ok(())

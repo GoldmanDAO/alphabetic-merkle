@@ -167,12 +167,13 @@ dependencies = [
  "entity",
  "ethers",
  "merkletree",
+ "migration",
  "sea-orm",
  "serde",
  "serde_json",
  "services",
- "thiserror",
  "tokio",
+ "tokio-util",
  "tower",
  "tower-http",
  "tracing",
@@ -4106,6 +4107,7 @@ version = "1.0.105"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "693151e1ac27563d6dbcec9dee9fbd5da8539b20fa14ad3752b2e6d363ace360"
 dependencies = [
+ "indexmap 2.0.0",
  "itoa",
  "ryu",
  "serde",
@@ -4147,6 +4149,8 @@ name = "services"
 version = "0.1.0"
 dependencies = [
  "entity",
+ "ethers",
+ "merkletree",
  "sea-orm",
  "serde",
  "sqlx",

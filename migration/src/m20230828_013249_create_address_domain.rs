@@ -10,7 +10,7 @@ impl MigrationTrait for Migration {
 
         db.execute_unprepared(
             "CREATE DOMAIN address AS 
-                VARCHAR(42) NOT NULL CHECK (value ~ '^0x[a-fA-F0-9]{40}');"
+                VARCHAR(42) NOT NULL CHECK (value ~ '^0x[a-fA-F0-9]{40}');",
         )
         .await?;
         Ok(())
@@ -25,4 +25,3 @@ impl MigrationTrait for Migration {
         Ok(())
     }
 }
-
