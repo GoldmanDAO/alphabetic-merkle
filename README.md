@@ -13,5 +13,5 @@ $ git clone https://github.com/GoldmanDAO/alphabetic-merkle
 $ cd alphabetic-merkle
 $ cargo build
 $ export DATABASE_URL=postgres://localhost/alphabetic_merkle   # This DB should already exists
-$ cargo run
+$ cargo run --bin api
 ```
